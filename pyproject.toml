@@ -1,0 +1,34 @@
+[project]
+name = "wconfig"
+version = "0.1.0"
+description = "Layered Python configuration loader inspired by Viper"
+readme = "README.md"
+authors = [
+    { name = "seoyc", email = "wkqco33@gmail.com" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.12"
+dependencies = [
+    "PyYAML>=6.0,<7.0",
+]
+keywords = ["config", "configuration", "dotenv", "json", "toml", "yaml"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3,<9.0",
+]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[build-system]
+requires = ["uv_build>=0.11.6,<0.12.0"]
+build-backend = "uv_build"
