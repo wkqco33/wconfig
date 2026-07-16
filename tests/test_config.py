@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Literal
 
 import pytest
 
@@ -148,3 +149,30 @@ def test_invalid_dotenv_raises_decode_error(tmp_path):
 
     with pytest.raises(ConfigDecodeError):
         Config().load_dotenv(dotenv_path)
+
+
+@dataclass
+class ServerSettings:
+    env: Literal["dev", "stage", "prod"]
+    port: int
+
+
+def test_decode_supports_literal():
+    config = Config().set_defaults({
+        "env": "stage",
+        "port": 8080
+    })
+    settings = config.decode(ServerSettings)
+    assert settings.env == "stage"
+    assert settings.port == 8080
+
+
+def test_decode_literal_invalid_value_raises_error():
+    config = Config().set_defaults({
+        "env": "invalid_env",
+        "port": 8080
+    })
+    with pytest.raises(ConfigDecodeError) as exc_info:
+        config.decode(ServerSettings)
+    assert "Expected one of" in str(exc_info.value)
+

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import MISSING, fields, is_dataclass
 from types import NoneType, UnionType
-from typing import Any, Union, get_args, get_origin, get_type_hints
+from typing import Any, Literal, Union, get_args, get_origin, get_type_hints
 
 from ._utils import normalize_key
 from .errors import ConfigDecodeError
@@ -27,6 +27,8 @@ def decode_to_type(value: Any, target_type: type[Any], *, path: str) -> Any:
         return _decode_mapping(value, target_type, path=path)
     if origin in {UnionType, Union}:
         return _decode_union(value, target_type, path=path)
+    if origin is Literal:
+        return _decode_literal(value, target_type, path=path)
     if target_type is bool:
         return _decode_bool(value, path=path)
     if target_type in {str, int, float}:
@@ -99,6 +101,15 @@ def _decode_union(value: Any, target_type: type[Any], *, path: str) -> Any:
         except ConfigDecodeError as exc:
             errors.append(str(exc))
     raise ConfigDecodeError(f"Value at {path} did not match any allowed type: {'; '.join(errors)}")
+
+
+def _decode_literal(value: Any, target_type: type[Any], *, path: str) -> Any:
+    allowed_values = get_args(target_type)
+    for allowed in allowed_values:
+        if value == allowed and type(value) is type(allowed):
+            return value
+    allowed_reprs = ", ".join(repr(v) for v in allowed_values)
+    raise ConfigDecodeError(f"Expected one of {{{allowed_reprs}}} at {path}, got {value!r}")
 
 
 def _decode_bool(value: Any, *, path: str) -> bool:
