@@ -15,10 +15,12 @@
 ## 설치
 
 ```bash
-pip install wconfig
+pip install wconf
 ```
 
 ## 빠른 시작
+
+배포 이름은 `wconf`이며, Python import 경로는 하위 호환성을 위해 `wconfig`를 유지합니다.
 
 ```python
 from dataclasses import dataclass
