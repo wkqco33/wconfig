@@ -110,7 +110,7 @@ wheels = [
 ]
 
 [[package]]
-name = "wconf"
+name = "wpyconf"
 version = "0.2.1"
 source = { editable = "." }
 dependencies = [
