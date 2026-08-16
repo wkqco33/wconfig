@@ -18,7 +18,9 @@ def normalize_value(value: Any) -> Any:
 
 
 def normalize_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
-    return {normalize_key(str(key)): normalize_value(value) for key, value in data.items()}
+    return {
+        normalize_key(str(key)): normalize_value(value) for key, value in data.items()
+    }
 
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:

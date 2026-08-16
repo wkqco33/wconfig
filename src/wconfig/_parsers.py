@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 from ._utils import normalize_mapping
-from .errors import ConfigDecodeError, ConfigFileNotFoundError, UnsupportedConfigFormatError
+from .errors import (
+    ConfigDecodeError,
+    ConfigFileNotFoundError,
+    UnsupportedConfigFormatError,
+)
 
 
 def load_file_data(path: str | Path) -> dict[str, Any]:
@@ -43,21 +47,29 @@ def load_dotenv_data(path: str | Path) -> dict[str, str]:
         raise ConfigDecodeError(f".env path is not a file: {file_path}")
 
     items: list[tuple[str, str]] = []
-    for line_number, raw_line in enumerate(file_path.read_text(encoding="utf-8").splitlines(), start=1):
+    for line_number, raw_line in enumerate(
+        file_path.read_text(encoding="utf-8").splitlines(), start=1
+    ):
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
             continue
         if stripped.startswith("export "):
             stripped = stripped[7:].lstrip()
         if "=" not in stripped:
-            raise ConfigDecodeError(f"Invalid .env assignment at {file_path}:{line_number}")
+            raise ConfigDecodeError(
+                f"Invalid .env assignment at {file_path}:{line_number}"
+            )
 
         key, raw_value = stripped.split("=", 1)
         key = key.strip()
         if not key:
-            raise ConfigDecodeError(f"Missing key in .env assignment at {file_path}:{line_number}")
+            raise ConfigDecodeError(
+                f"Missing key in .env assignment at {file_path}:{line_number}"
+            )
 
-        items.append((key, _parse_dotenv_value(raw_value.strip(), file_path, line_number)))
+        items.append(
+            (key, _parse_dotenv_value(raw_value.strip(), file_path, line_number))
+        )
     return dict(items)
 
 
@@ -98,9 +110,13 @@ def _parse_dotenv_value(raw_value: str, path: Path, line_number: int) -> str:
         try:
             value = ast.literal_eval(raw_value)
         except (SyntaxError, ValueError) as exc:
-            raise ConfigDecodeError(f"Invalid quoted .env value at {path}:{line_number}") from exc
+            raise ConfigDecodeError(
+                f"Invalid quoted .env value at {path}:{line_number}"
+            ) from exc
         if not isinstance(value, str):
-            raise ConfigDecodeError(f"Quoted .env value must resolve to a string at {path}:{line_number}")
+            raise ConfigDecodeError(
+                f"Quoted .env value must resolve to a string at {path}:{line_number}"
+            )
         return value
 
     hash_index = raw_value.find(" #")

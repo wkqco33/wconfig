@@ -1,4 +1,4 @@
-from .config import Config, SourceInfo, load_config
+from .config import Config, SourceInfo, ValueSource, load_config
 from .errors import (
     ConfigDecodeError,
     ConfigError,
@@ -15,5 +15,6 @@ __all__ = [
     "MissingConfigKeyError",
     "SourceInfo",
     "UnsupportedConfigFormatError",
+    "ValueSource",
     "load_config",
 ]

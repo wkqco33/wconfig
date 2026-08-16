@@ -1,9 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+import os
+from collections.abc import Iterator, Mapping
 from dataclasses import dataclass
 from itertools import count
-import os
 from pathlib import Path
 from typing import Any, TypeVar
 
@@ -31,6 +31,13 @@ class SourceInfo:
 
 
 @dataclass(frozen=True, slots=True)
+class ValueSource:
+    key: str
+    value: Any
+    source: SourceInfo
+
+
+@dataclass(frozen=True, slots=True)
 class _SourceLayer:
     info: SourceInfo
     data: dict[str, Any]
@@ -45,16 +52,23 @@ class Config:
         env_nested_delimiter: str = "__",
         key_delimiter: str = ".",
     ) -> None:
-        self._env_prefix = env_prefix
-        self._env_prefix_separator = env_prefix_separator
-        self._env_nested_delimiter = env_nested_delimiter
-        self._key_delimiter = key_delimiter
+        self._env_prefix: str | None = env_prefix
+        self._env_prefix_separator: str = env_prefix_separator
+        self._env_nested_delimiter: str = env_nested_delimiter
+        self._key_delimiter: str = key_delimiter
         self._sources: list[_SourceLayer] = []
-        self._counter = count()
+        self._counter: Iterator[int] = count()
         self._merged: dict[str, Any] = {}
 
-    def set_defaults(self, data: Mapping[str, Any], *, name: str = "defaults") -> Config:
-        return self._add_source(kind="defaults", name=name, data=normalize_mapping(data), priority=_DEFAULTS_PRIORITY)
+    def set_defaults(
+        self, data: Mapping[str, Any], *, name: str = "defaults"
+    ) -> Config:
+        return self._add_source(
+            kind="defaults",
+            name=name,
+            data=normalize_mapping(data),
+            priority=_DEFAULTS_PRIORITY,
+        )
 
     def load_mapping(
         self,
@@ -63,7 +77,9 @@ class Config:
         name: str = "mapping",
         priority: int = _FILE_PRIORITY,
     ) -> Config:
-        return self._add_source(kind="mapping", name=name, data=normalize_mapping(data), priority=priority)
+        return self._add_source(
+            kind="mapping", name=name, data=normalize_mapping(data), priority=priority
+        )
 
     def load_file(self, path: str | Path, *, name: str | None = None) -> Config:
         file_path = Path(path)
@@ -77,7 +93,7 @@ class Config:
 
     def load_files(self, *paths: str | Path) -> Config:
         for path in paths:
-            self.load_file(path)
+            _ = self.load_file(path)
         return self
 
     def load_dotenv(
@@ -116,7 +132,9 @@ class Config:
             prefix_separator=self._env_prefix_separator,
             nested_delimiter=self._env_nested_delimiter,
         )
-        return self._add_source(kind="env", name=name, data=data, priority=_ENV_PRIORITY)
+        return self._add_source(
+            kind="env", name=name, data=data, priority=_ENV_PRIORITY
+        )
 
     def get(self, key: str, default: Any = None) -> Any:
         try:
@@ -142,7 +160,32 @@ class Config:
         return decode_to_type(source, target_type, path=path)
 
     def sources(self) -> tuple[SourceInfo, ...]:
-        return tuple(layer.info for layer in sorted(self._sources, key=lambda layer: (layer.info.priority, layer.info.order)))
+        return tuple(
+            layer.info
+            for layer in sorted(
+                self._sources, key=lambda layer: (layer.info.priority, layer.info.order)
+            )
+        )
+
+    def get_source(self, key: str) -> ValueSource:
+        normalized_key = self._normalize_lookup_key(key)
+        for layer in sorted(
+            self._sources,
+            key=lambda item: (item.info.priority, item.info.order),
+            reverse=True,
+        ):
+            try:
+                value = get_path(
+                    layer.data, normalized_key, delimiter=self._key_delimiter
+                )
+            except KeyError:
+                continue
+            return ValueSource(
+                key=normalized_key,
+                value=deep_merge({}, {"value": value})["value"],
+                source=layer.info,
+            )
+        raise MissingConfigKeyError(key)
 
     def _add_source(
         self,
@@ -166,9 +209,18 @@ class Config:
 
     def _rebuild(self) -> None:
         merged: dict[str, Any] = {}
-        for layer in sorted(self._sources, key=lambda item: (item.info.priority, item.info.order)):
+        for layer in sorted(
+            self._sources, key=lambda item: (item.info.priority, item.info.order)
+        ):
             merged = deep_merge(merged, layer.data)
         self._merged = merged
+
+    def _normalize_lookup_key(self, key: str) -> str:
+        return self._key_delimiter.join(
+            part.strip().replace("-", "_").lower()
+            for part in key.split(self._key_delimiter)
+            if part.strip()
+        )
 
 
 def load_config(
@@ -188,11 +240,11 @@ def load_config(
         env_nested_delimiter=env_nested_delimiter,
     )
     if defaults:
-        config.set_defaults(defaults)
+        _ = config.set_defaults(defaults)
     for path in files:
-        config.load_file(path)
+        _ = config.load_file(path)
     if dotenv is not None:
-        config.load_dotenv(dotenv)
+        _ = config.load_dotenv(dotenv)
     if env:
-        config.load_env(environ)
+        _ = config.load_env(environ)
     return config
