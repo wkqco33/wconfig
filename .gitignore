@@ -1,3 +1,4 @@
+.token
 # Created by https://www.toptal.com/developers/gitignore/api/linux,macos,python,visualstudiocode,windows
 # Edit at https://www.toptal.com/developers/gitignore?templates=linux,macos,python,visualstudiocode,windows
 
@@ -23,7 +24,8 @@
 .LSOverride
 
 # Icon must end with two \r
-Icon
+Icon
+
 
 # Thumbnails
 ._*
