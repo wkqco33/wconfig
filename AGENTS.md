@@ -1,123 +1,64 @@
 # AGENTS
 
-## TDD suitability review
+wconfig 프로젝트의 개발 가이드 및 에이전트 작업 지침입니다.
 
-This project is **good enough to work with TDD, but not yet strongly optimized for it**.
+## 아키텍처 및 핵심 원칙
 
-Current strengths:
+1. **설정 우선순위 (Merge Precedence)**
+   - `환경변수 (Environment) > .env > 설정 파일 (File) > 코드 기본값 (Defaults)`
+   - 동일 우선순위 내에서는 나중에 로드된 소스가 이전 값을 덮어씁니다.
+2. **키 정규화 (Key Normalization)**
+   - 모든 설정 키는 내부적으로 소문자 및 언더스코어(`_`) 기준으로 정규화됩니다.
+   - 예: `service-config.api-key`, `service_config.api_key`, `SERVICE_CONFIG.API_KEY`는 동일한 키로 처리됩니다.
+3. **타입 안전성 및 디코딩**
+   - dataclass, primitive 타입, Sequence, Mapping, Union, Optional, Literal 등의 타입 디코딩을 지원합니다.
+   - 파싱/디코딩 실패 시 구체적인 경로와 함께 명시적인 예외(`ConfigDecodeError` 등)를 발생시킵니다.
 
-- The public API is small and easy to drive from tests (`Config`, `load_config`, decode helpers).
-- The package is mostly deterministic and side effects are isolated to file and environment loading.
-- Existing tests exercise behavior from the outside instead of overfitting to internals.
-- Error types are explicit, which is useful for red-first test writing.
+## 프로젝트 구조
 
-Current gaps:
+```
+wconfig/
+├── src/wconfig/
+│   ├── __init__.py       # 공개 API export
+│   ├── config.py         # Config 클래스 및 load_config 함수
+│   ├── errors.py         # 패키지 예외 정의
+│   ├── _parsers.py       # JSON, TOML, YAML, .env 파일 파서
+│   ├── _decode.py        # dataclass 및 타입 디코딩 로직
+│   └── _utils.py         # 딕셔너리 deep merge 및 키 정규화 유틸리티
+└── tests/
+    ├── test_public_api.py        # 공개 API 테스트
+    ├── test_merge_precedence.py  # 설정 병합 및 우선순위 테스트
+    ├── test_file_loading.py      # JSON, TOML, YAML 파일 로딩 테스트
+    ├── test_dotenv_loading.py    # .env 및 환경변수 로딩 테스트
+    └── test_decode.py            # 타입 디코딩 및 검증 테스트
+```
 
-- Most tests are concentrated in a single file, so scenarios are not grouped by feature or failure mode.
-- There are not enough focused failure-path tests for parser and decoder edge cases.
-- There is no guardrail for test naming, test layout, or red-green-refactor workflow.
-- There is no lightweight command for running a narrow subset while developing one behavior.
-- Some important compatibility rules are only implicitly covered by broad tests.
+## 개발 및 테스트 워크플로 (TDD)
 
-## Recommended improvements
+### 기본 원칙
 
-1. Split tests by behavior area.
-   - `tests/test_merge_precedence.py`
-   - `tests/test_file_loading.py`
-   - `tests/test_dotenv_loading.py`
-   - `tests/test_decode.py`
-   - `tests/test_public_api.py`
+- **기능별 테스트 분리**: 테스트는 관련 동작 영역(`test_decode.py`, `test_file_loading.py` 등)에 배치합니다.
+- **공개 API 중심 검증**: 내부 헬퍼보다는 `Config`, `load_config` 등의 공개 인터페이스를 통해 동작을 검증합니다.
+- **명시적 예외 검증**: 에러 상황에서는 정확한 패키지 예외 타입 및 에러 메시지 경로를 검증합니다.
 
-2. Prefer one behavior per test.
-   - Keep each test focused on one rule and one failure reason.
-   - Avoid mixing precedence, parsing, and decoding assertions in a single case unless the interaction itself is the feature.
+### 주요 명령어
 
-3. Expand regression coverage for edge cases.
-   - Missing file vs unsupported extension
-   - Non-mapping top-level config payloads
-   - Empty YAML file behavior
-   - Key normalization with mixed case and hyphen/underscore inputs
-   - Source ordering when same-priority sources are loaded multiple times
-   - `decode()` for list, tuple, dict, union, optional, and nested container failures
-   - Bool coercion failures and int/bool ambiguity
-   - `.env` quoting, comments, `export` syntax, duplicate keys, and invalid assignments
-
-4. Keep tests public-API first.
-   - Prefer testing through `Config` and `load_config`.
-   - Only add lower-level unit tests for helpers when a bug cannot be expressed clearly through the public API.
-
-5. Use regression tests for every bug fix.
-   - Write the failing test first.
-   - Confirm it fails for the intended reason.
-   - Implement the minimal production change.
-   - Refactor only after the test passes.
-
-## Development guide
-
-### Core TDD workflow
-
-1. Add or update a failing test for the behavior.
-2. Run the narrowest possible pytest target.
-3. Implement the smallest change that makes the test pass.
-4. Refactor production or test code without changing behavior.
-5. Run the relevant focused tests again.
-6. Before finishing, run the full test suite.
-
-### Test organization rules
-
-- Put new tests near the behavior they cover instead of extending one catch-all test file indefinitely.
-- Name tests by observable behavior, for example:
-  - `test_load_env_ignores_unprefixed_keys`
-  - `test_decode_union_reports_all_candidate_failures`
-  - `test_load_file_rejects_non_mapping_top_level_json`
-- Prefer fixtures like `tmp_path` and explicit inline data over shared mutable helpers.
-- Keep assertions specific enough to explain the regression.
-
-### Coverage priorities for future work
-
-When changing merge behavior:
-
-- Add precedence tests first.
-- Add ordering tests when two sources share a priority class.
-- Verify normalized keys do not change merge expectations.
-
-When changing file parsing:
-
-- Add one success case and one failure case per format.
-- Assert the exact package error type raised.
-
-When changing dotenv behavior:
-
-- Cover prefix filtering, nested delimiter mapping, quoting, comments, blank values, and invalid lines.
-
-When changing decode behavior:
-
-- Cover both successful coercion and failure messages.
-- Add nested path assertions so errors remain debuggable.
-
-### Suggested pytest commands
-
-Run one file:
-
+단일 테스트 파일 실행:
 ```bash
 uv run --group dev pytest tests/test_public_api.py
 ```
 
-Run one test:
-
+특정 테스트 케이스 실행:
 ```bash
 uv run --group dev pytest tests/test_decode.py -k literal
 ```
 
-Run the full suite:
-
+전체 테스트 스위트 실행:
 ```bash
 uv run --group dev pytest
 ```
 
-## Suggested next test additions
-
-- Add tests for `Enum` decode support if that API is introduced.
-- Add tests for `Path` decoding if path-like targets are supported.
-- Add tests for richer source provenance on nested merged objects.
-- Add tests for invalid JSON, invalid TOML, and invalid YAML decoding errors with stable message assertions.
+패키지 빌드:
+```bash
+uv build
+```

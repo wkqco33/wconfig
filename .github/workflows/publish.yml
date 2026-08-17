@@ -38,7 +38,7 @@ jobs:
     runs-on: ubuntu-latest
     environment:
       name: pypi
-      url: https://pypi.org/project/wconfig/
+      url: https://pypi.org/project/wpyconf/
 
     steps:
       - name: Download dist artifacts

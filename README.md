@@ -7,10 +7,11 @@
 ## 주요 기능
 
 - JSON, TOML, YAML, `.env`, 환경변수에서 설정 로드
-- 로더 호출 순서와 무관하게 중첩 설정을 일관된 규칙으로 병합
+- 로더 호출 순서와 무관하게 일관된 계층형 우선순위 병합
 - `database.host` 같은 dotted key 방식으로 값 조회
-- 병합된 설정을 dataclass로 디코딩
-- 공개 PyPI에 배포해 일반 Python 패키지처럼 설치 가능
+- 병합된 설정을 dataclass 및 타입 컨테이너로 디코딩
+- `get_source()`를 통한 설정 값의 출처(source provenance) 추적
+- 대소문자 및 하이픈/언더스코어(`-` / `_`) 구분 없는 유연한 키 정규화
 
 ## 설치
 
@@ -18,9 +19,9 @@
 pip install wpyconf
 ```
 
-## 빠른 시작
+> **참고**: PyPI 배포 패키지 이름은 `wpyconf`이며, 코드 내 import 경로는 하위 호환성을 위해 `wconfig`를 사용합니다.
 
-배포 이름은 `wpyconf`이며, Python import 경로는 하위 호환성을 위해 `wconfig`를 유지합니다.
+## 빠른 시작
 
 ```python
 from dataclasses import dataclass
@@ -85,10 +86,22 @@ print(config.get("database.port"))
 - `has(key)`: 키 존재 여부 확인
 - `as_dict()`: 병합된 설정을 일반 딕셔너리로 내보내기
 - `decode(type, key=None)`: 전체 또는 일부 설정을 dataclass나 타입 지정 컨테이너로 디코딩
+- `sources()`: 등록된 모든 설정 소스 정보 목록 조회
 
 ### `load_config(...)`
 
 간단한 구성에서는 `load_config()`로 `Config` 인스턴스를 한 번에 만들 수 있습니다.
+
+```python
+from wconfig import load_config
+
+config = load_config(
+    defaults={"api": {"timeout": 30}},
+    files=("config.yaml",),
+    dotenv=".env",
+    env_prefix="APP",
+)
+```
 
 ## 동작 규칙
 
@@ -103,9 +116,9 @@ print(config.get("database.port"))
 
 ```python
 source = config.get_source("database.host")
-print(source.value)
-print(source.source.kind)
-print(source.source.name)
+print(source.value)        # 'localhost'
+print(source.source.kind)  # 'defaults'
+print(source.source.name)  # 'defaults'
 ```
 
 ## 지원 파일 형식
@@ -115,47 +128,20 @@ print(source.source.name)
 - `.yaml`
 - `.yml`
 
-YAML 지원은 `PyYAML`을 사용합니다.
-
-## 패키지 빌드
-
-```bash
-uv build
-```
-
-빌드 결과물은 `dist/` 디렉터리에 생성됩니다.
-
-## 공개 PyPI로 배포
-
-테스트 업로드로 먼저 검증하려면 TestPyPI를 사용할 수 있습니다.
-
-```bash
-export UV_PUBLISH_TOKEN=pypi-...
-uv publish --index testpypi
-```
-
-공개 PyPI에 실제 배포할 때는 다음 명령을 사용합니다.
-
-```bash
-export UV_PUBLISH_TOKEN=pypi-...
-uv publish
-```
-
-배포 전에 패키지를 다시 빌드하려면 다음 순서를 사용합니다.
-
-```bash
-rm -rf dist
-uv build
-export UV_PUBLISH_TOKEN=pypi-...
-uv publish
-```
-
-`UV_PUBLISH_TOKEN`에는 PyPI 또는 TestPyPI에서 발급받은 API token을 설정합니다.
-
-## 개발
+## 개발 및 테스트
 
 테스트 실행:
 
 ```bash
 uv run --group dev pytest
 ```
+
+패키지 빌드:
+
+```bash
+uv build
+```
+
+## 라이선스
+
+이 프로젝트는 [MIT 라이선스](LICENSE)에 따라 배포됩니다.
