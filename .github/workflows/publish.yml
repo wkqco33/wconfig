@@ -1,6 +1,9 @@
 name: Publish to PyPI
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types: [published]
 
@@ -11,6 +14,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.release.tag_name || github.ref }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
@@ -22,6 +27,18 @@ jobs:
 
       - name: Run tests
         run: uv run --group dev pytest
+
+      - name: Set package version from release tag
+        env:
+          RELEASE_TAG: ${{ github.event.release.tag_name || github.ref_name }}
+        run: |
+          if [[ "$RELEASE_TAG" != v* ]]; then
+            echo "::error::Release tag must start with 'v' (got '$RELEASE_TAG')"
+            exit 1
+          fi
+
+          expected_version="${RELEASE_TAG#v}"
+          uv version "$expected_version" --frozen
 
       - name: Build package
         run: uv build
@@ -51,3 +68,4 @@ jobs:
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
