@@ -76,16 +76,16 @@ print(config.get("database.port"))
 ### `Config`
 
 - `set_defaults(mapping)`: 코드 기본값 등록
-- `load_file(path)`: JSON, TOML, YAML 파일 하나 로드
+- `load_file(path, *, name=None, format=None)`: JSON, TOML, YAML 파일 로드 (확장자가 없는 파일은 `format="yaml"` 등으로 지정 가능)
 - `load_files(*paths)`: 여러 설정 파일 로드
 - `load_dotenv(path=".env")`: dotenv 파일 로드
 - `load_env(environ=None)`: 실제 환경변수 또는 전달한 매핑 로드
 - `get(key, default=None)`: dotted path로 값 조회
+- `require(key)` / `config[key]`: 반드시 필요한 값을 조회하고 없으면 `MissingConfigKeyError` 발생
+- `has(key)` / `key in config`: 키 존재 여부 확인
 - `get_source(key)`: 최종 값이 어느 source에서 왔는지 조회
-- `require(key)`: 반드시 필요한 값을 조회하고 없으면 `MissingConfigKeyError` 발생
-- `has(key)`: 키 존재 여부 확인
 - `as_dict()`: 병합된 설정을 일반 딕셔너리로 내보내기
-- `decode(type, key=None)`: 전체 또는 일부 설정을 dataclass나 타입 지정 컨테이너로 디코딩
+- `decode(type, key=None)`: 전체 또는 일부 설정을 dataclass, Enum, Path, Sequence/Mapping 등으로 디코딩 (환경변수 문자열 리스트/JSON 파싱 지원)
 - `sources()`: 등록된 모든 설정 소스 정보 목록 조회
 
 ### `load_config(...)`

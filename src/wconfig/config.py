@@ -89,14 +89,20 @@ class Config:
             kind="mapping", name=name, data=normalize_mapping(data), priority=priority
         )
 
-    def load_file(self, path: str | Path, *, name: str | None = None) -> Config:
+    def load_file(
+        self,
+        path: str | Path,
+        *,
+        name: str | None = None,
+        format: str | None = None,
+    ) -> Config:
         """Load configuration values from a JSON, TOML, or YAML file."""
         file_path = Path(path)
         return self._add_source(
             kind="file",
             name=name or file_path.name,
             origin=str(file_path),
-            data=load_file_data(file_path),
+            data=load_file_data(file_path, format=format),
             priority=_FILE_PRIORITY,
         )
 
@@ -165,6 +171,14 @@ class Config:
     def has(self, key: str) -> bool:
         """Check if a configuration key exists."""
         return self.get(key, _MISSING) is not _MISSING
+
+    def __getitem__(self, key: str) -> Any:
+        """Retrieve a configuration value using dictionary-style indexing."""
+        return self.require(key)
+
+    def __contains__(self, key: object) -> bool:
+        """Check if a configuration key exists using the 'in' operator."""
+        return isinstance(key, str) and self.has(key)
 
     def as_dict(self) -> dict[str, Any]:
         """Return the fully merged configuration as a dictionary."""

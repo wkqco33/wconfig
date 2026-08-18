@@ -1,11 +1,33 @@
 from __future__ import annotations
 
+import json
+from collections.abc import (
+    Mapping as AbcMapping,
+    MutableMapping as AbcMutableMapping,
+    MutableSequence as AbcMutableSequence,
+    MutableSet as AbcMutableSet,
+    Sequence as AbcSequence,
+    Set as AbcSet,
+)
 from dataclasses import MISSING, fields, is_dataclass
+from enum import Enum
+from pathlib import Path
 from types import NoneType, UnionType
 from typing import Any, Literal, Union, cast, get_args, get_origin, get_type_hints
 
 from ._utils import normalize_key
 from .errors import ConfigDecodeError
+
+_SEQUENCE_ORIGINS = {
+    list,
+    set,
+    frozenset,
+    AbcSequence,
+    AbcMutableSequence,
+    AbcSet,
+    AbcMutableSet,
+}
+_MAPPING_ORIGINS = {dict, AbcMapping, AbcMutableMapping}
 
 
 def decode_to_type(value: Any, target_type: type[Any], *, path: str) -> Any:
@@ -19,11 +41,17 @@ def decode_to_type(value: Any, target_type: type[Any], *, path: str) -> Any:
         raise ConfigDecodeError(f"Expected null at {path}, got {type(value).__name__}")
     if is_dataclass(target_type):
         return _decode_dataclass(value, target_type, path=path)
-    if origin in {list, set, frozenset}:
+    if isinstance(target_type, type) and issubclass(target_type, Enum):
+        return _decode_enum(value, target_type, path=path)
+    if target_type is Path or (
+        isinstance(target_type, type) and issubclass(target_type, Path)
+    ):
+        return _decode_path(value, target_type, path=path)
+    if origin in _SEQUENCE_ORIGINS:
         return _decode_sequence(value, target_type, path=path)
     if origin is tuple:
         return _decode_tuple(value, target_type, path=path)
-    if origin is dict:
+    if origin in _MAPPING_ORIGINS:
         return _decode_mapping(value, target_type, path=path)
     if origin in {UnionType, Union}:
         return _decode_union(value, target_type, path=path)
@@ -61,10 +89,64 @@ def _decode_dataclass(value: Any, target_type: type[Any], *, path: str) -> Any:
     return target_type(**kwargs)
 
 
+def _decode_enum(value: Any, target_type: type[Enum], *, path: str) -> Enum:
+    if isinstance(value, target_type):
+        return value
+
+    # Try matching by enum value first (e.g. Color("red") or Code(1))
+    try:
+        return target_type(value)
+    except (ValueError, TypeError, KeyError):
+        pass
+
+    # Try matching by enum name if value is string (e.g. Color["RED"] or Color["red"])
+    if isinstance(value, str):
+        try:
+            return target_type[value]
+        except KeyError:
+            pass
+        try:
+            return target_type[value.upper()]
+        except KeyError:
+            pass
+
+    raise ConfigDecodeError(
+        f"Expected {target_type.__name__} at {path}, got {value!r}"
+    )
+
+
+def _decode_path(value: Any, target_type: type[Path], *, path: str) -> Path:
+    if isinstance(value, Path):
+        return value
+    if isinstance(value, str):
+        return target_type(value)
+    raise ConfigDecodeError(f"Expected Path at {path}, got {type(value).__name__}")
+
+
+def _coerce_to_sequence_items(value: Any, *, path: str) -> list[object]:
+    if isinstance(value, list):
+        return cast(list[object], value)
+    if isinstance(value, tuple | set | frozenset):
+        return list(cast(tuple[object, ...] | set[object], value))
+    if isinstance(value, str):
+        trimmed = value.strip()
+        if not trimmed:
+            return []
+        if (trimmed.startswith("[") and trimmed.endswith("]")) or (
+            trimmed.startswith("(") and trimmed.endswith(")")
+        ):
+            try:
+                parsed = json.loads(trimmed)
+                if isinstance(parsed, list):
+                    return cast(list[object], parsed)
+            except (json.JSONDecodeError, ValueError):
+                pass
+        return [item.strip() for item in trimmed.split(",") if item.strip()]
+    raise ConfigDecodeError(f"Expected list at {path}, got {type(value).__name__}")
+
+
 def _decode_sequence(value: Any, target_type: type[Any], *, path: str) -> Any:
-    if not isinstance(value, list):
-        raise ConfigDecodeError(f"Expected list at {path}, got {type(value).__name__}")
-    values = cast(list[object], value)
+    values = _coerce_to_sequence_items(value, path=path)
     origin = get_origin(target_type)
     args = get_args(target_type)
     item_type = cast(type[object], args[0]) if args else object
@@ -72,19 +154,15 @@ def _decode_sequence(value: Any, target_type: type[Any], *, path: str) -> Any:
         decode_to_type(item, item_type, path=f"{path}[{index}]")
         for index, item in enumerate(values)
     ]
-    if origin is list:
-        return decoded
-    if origin is set:
+    if origin in {set, AbcSet, AbcMutableSet}:
         return set(decoded)
-    return frozenset(decoded)
+    if origin is frozenset:
+        return frozenset(decoded)
+    return decoded
 
 
 def _decode_tuple(value: Any, target_type: type[Any], *, path: str) -> Any:
-    if not isinstance(value, list | tuple):
-        raise ConfigDecodeError(
-            f"Expected tuple-compatible value at {path}, got {type(value).__name__}"
-        )
-    values = cast(list[object] | tuple[object, ...], value)
+    values = _coerce_to_sequence_items(value, path=path)
     args = get_args(target_type)
     if len(args) == 2 and args[1] is Ellipsis:
         item_type = cast(type[object], args[0])
@@ -107,7 +185,7 @@ def _decode_tuple(value: Any, target_type: type[Any], *, path: str) -> Any:
 
 
 def _decode_mapping(value: Any, target_type: type[Any], *, path: str) -> Any:
-    if not isinstance(value, dict):
+    if not isinstance(value, dict | AbcMapping):
         raise ConfigDecodeError(
             f"Expected mapping at {path}, got {type(value).__name__}"
         )
@@ -179,3 +257,4 @@ def _raise_type_error(path: str, target_type: type[Any], value: Any) -> Any:
     raise ConfigDecodeError(
         f"Expected {target_type!r} at {path}, got {type(value).__name__}"
     )
+

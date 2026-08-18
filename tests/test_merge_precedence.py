@@ -83,3 +83,37 @@ def test_sources_reports_source_order_and_metadata(tmp_path: Path):
             name="environment", kind="env", priority=40, order=2, origin=None
         ),
     )
+
+
+from dataclasses import dataclass
+
+
+@dataclass
+class ClusterConfig:
+    hosts: list[str]
+    ports: tuple[int, ...]
+
+
+def test_env_overrides_file_list_and_decodes_cleanly(tmp_path: Path):
+    config_path = tmp_path / "cluster.yaml"
+    config_path.write_text(
+        "cluster:\n  hosts:\n    - file1.local\n    - file2.local\n  ports:\n    - 8000\n",
+        encoding="utf-8",
+    )
+
+    config = (
+        Config(env_prefix="APP")
+        .load_file(config_path)
+        .load_env(
+            {
+                "APP_CLUSTER__HOSTS": "override1.local, override2.local",
+                "APP_CLUSTER__PORTS": "[9001, 9002]",
+            }
+        )
+    )
+
+    cluster = config.decode(ClusterConfig, key="cluster")
+
+    assert cluster.hosts == ["override1.local", "override2.local"]
+    assert cluster.ports == (9001, 9002)
+

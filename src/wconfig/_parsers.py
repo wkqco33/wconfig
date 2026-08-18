@@ -15,19 +15,26 @@ from .errors import (
 )
 
 
-def load_file_data(path: str | Path) -> dict[str, Any]:
+def load_file_data(
+    path: str | Path, *, format: str | None = None
+) -> dict[str, Any]:
     file_path = Path(path)
     if not file_path.exists():
         raise ConfigFileNotFoundError(f"Configuration file does not exist: {file_path}")
     if not file_path.is_file():
         raise ConfigDecodeError(f"Configuration path is not a file: {file_path}")
 
-    suffix = file_path.suffix.lower()
-    if suffix == ".json":
+    if format is not None:
+        fmt = format.lower().strip()
+        fmt = f".{fmt}" if not fmt.startswith(".") else fmt
+    else:
+        fmt = file_path.suffix.lower()
+
+    if fmt == ".json":
         data = _load_json(file_path)
-    elif suffix == ".toml":
+    elif fmt == ".toml":
         data = _load_toml(file_path)
-    elif suffix in {".yaml", ".yml"}:
+    elif fmt in {".yaml", ".yml"}:
         data = _load_yaml(file_path)
     else:
         raise UnsupportedConfigFormatError(

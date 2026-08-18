@@ -100,3 +100,37 @@ def test_get_source_raises_for_missing_key():
 
     with pytest.raises(MissingConfigKeyError):
         config.get_source("api.timeout")
+
+
+def test_dict_style_access_and_contains_operator():
+    config = Config().set_defaults(
+        {"server": {"host": "localhost", "port": 8080}}
+    )
+
+    assert config["server.host"] == "localhost"
+    assert config["server.port"] == 8080
+    assert "server.host" in config
+    assert "server.port" in config
+    assert "server.missing" not in config
+    assert 123 not in config  # non-string key safely returns False
+
+    with pytest.raises(KeyError):
+        _ = config["server.missing"]
+
+
+def test_load_file_supports_explicit_format(tmp_path: Path):
+    no_ext_yaml = tmp_path / "secret_settings"
+    no_ext_yaml.write_text("database:\n  host: pg.internal\n", encoding="utf-8")
+
+    no_ext_json = tmp_path / "app_settings"
+    no_ext_json.write_text('{"server": {"port": 9090}}', encoding="utf-8")
+
+    config = (
+        Config()
+        .load_file(no_ext_yaml, format="yaml")
+        .load_file(no_ext_json, format="json")
+    )
+
+    assert config["database.host"] == "pg.internal"
+    assert config["server.port"] == 9090
+
