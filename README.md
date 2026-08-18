@@ -103,6 +103,8 @@ config = load_config(
 )
 ```
 
+`load_config()`는 `env_prefix` 또는 `environ`을 지정한 경우에만 환경변수를 자동으로 읽습니다. prefix 없이 전체 프로세스 환경변수를 읽으려면 `env=True`를 명시해야 합니다.
+
 ## 동작 규칙
 
 - 모든 key는 내부적으로 소문자 + `_` 기준으로 정규화됩니다.

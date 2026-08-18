@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import json
 from collections.abc import (
     Mapping as AbcMapping,
@@ -61,11 +62,13 @@ def decode_to_type(value: Any, target_type: type[Any], *, path: str) -> Any:
         return _decode_bool(value, path=path)
     if target_type in {str, int, float}:
         return _decode_scalar(value, target_type, path=path)
-    return (
-        value
-        if isinstance(value, target_type)
-        else _raise_type_error(path, target_type, value)
-    )
+    try:
+        matches = isinstance(value, target_type)
+    except TypeError as exc:
+        raise ConfigDecodeError(
+            f"Unsupported target type at {path}: {target_type!r}"
+        ) from exc
+    return value if matches else _raise_type_error(path, target_type, value)
 
 
 def _decode_dataclass(value: Any, target_type: type[Any], *, path: str) -> Any:
@@ -74,7 +77,12 @@ def _decode_dataclass(value: Any, target_type: type[Any], *, path: str) -> Any:
             f"Expected mapping at {path}, got {type(value).__name__}"
         )
 
-    type_hints = get_type_hints(target_type)
+    try:
+        type_hints = get_type_hints(target_type)
+    except (NameError, TypeError) as exc:
+        raise ConfigDecodeError(
+            f"Could not resolve type hints for {target_type.__name__} at {path}"
+        ) from exc
     kwargs: dict[str, Any] = {}
     for field in fields(target_type):
         field_key = normalize_key(field.name)
@@ -132,14 +140,19 @@ def _coerce_to_sequence_items(value: Any, *, path: str) -> list[object]:
         trimmed = value.strip()
         if not trimmed:
             return []
-        if (trimmed.startswith("[") and trimmed.endswith("]")) or (
-            trimmed.startswith("(") and trimmed.endswith(")")
-        ):
+        if trimmed.startswith("[") and trimmed.endswith("]"):
             try:
                 parsed = json.loads(trimmed)
                 if isinstance(parsed, list):
                     return cast(list[object], parsed)
             except (json.JSONDecodeError, ValueError):
+                pass
+        if trimmed.startswith("(") and trimmed.endswith(")"):
+            try:
+                parsed = ast.literal_eval(trimmed)
+                if isinstance(parsed, (list, tuple)):
+                    return list(parsed)
+            except (SyntaxError, ValueError):
                 pass
         return [item.strip() for item in trimmed.split(",") if item.strip()]
     raise ConfigDecodeError(f"Expected list at {path}, got {type(value).__name__}")
@@ -193,7 +206,7 @@ def _decode_mapping(value: Any, target_type: type[Any], *, path: str) -> Any:
     key_type = cast(type[object], args[0]) if args else str
     value_type = cast(type[object], args[1]) if len(args) >= 2 else object
     return {
-        _decode_scalar(key, key_type, path=f"{path}.<key>"): decode_to_type(
+        decode_to_type(key, key_type, path=f"{path}.<key>"): decode_to_type(
             item, value_type, path=f"{path}.{key}"
         )
         for key, item in value.items()
@@ -244,7 +257,7 @@ def _decode_scalar(value: Any, target_type: type[Any], *, path: str) -> Any:
     if isinstance(value, str):
         try:
             return target_type(value)
-        except ValueError as exc:
+        except (TypeError, ValueError) as exc:
             raise ConfigDecodeError(
                 f"Could not coerce value at {path} to {target_type.__name__}"
             ) from exc
@@ -257,4 +270,3 @@ def _raise_type_error(path: str, target_type: type[Any], value: Any) -> Any:
     raise ConfigDecodeError(
         f"Expected {target_type!r} at {path}, got {type(value).__name__}"
     )
-

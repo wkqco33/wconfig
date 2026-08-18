@@ -3,7 +3,9 @@ from .errors import (
     ConfigDecodeError,
     ConfigError,
     ConfigFileNotFoundError,
+    ConfigFileReadError,
     MissingConfigKeyError,
+    ConfigNormalizationError,
     UnsupportedConfigFormatError,
 )
 
@@ -12,7 +14,9 @@ __all__ = [
     "ConfigDecodeError",
     "ConfigError",
     "ConfigFileNotFoundError",
+    "ConfigFileReadError",
     "MissingConfigKeyError",
+    "ConfigNormalizationError",
     "SourceInfo",
     "UnsupportedConfigFormatError",
     "ValueSource",

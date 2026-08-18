@@ -120,6 +120,10 @@ class LogLevel(IntEnum):
     ERROR = 40
 
 
+class SettingKey(str, Enum):
+    API = "api"
+
+
 @dataclass
 class ServiceSettings:
     env: Environment
@@ -212,3 +216,21 @@ def test_decode_sequence_from_comma_separated_and_json_strings():
     assert settings_json.ports == (9000, 9001)
     assert settings_json.tags == {"production"}
 
+
+def test_decode_supports_typed_mapping_keys_and_parenthesized_tuples():
+    @dataclass
+    class ClusterSettings:
+        limits: AbcMapping[SettingKey, int]
+        ports: tuple[int, ...]
+
+    config = Config().set_defaults(
+        {
+            "limits": {"api": "10"},
+            "ports": "(9000, 9001)",
+        }
+    )
+
+    settings = config.decode(ClusterSettings)
+
+    assert settings.limits == {SettingKey.API: 10}
+    assert settings.ports == (9000, 9001)

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from itertools import count
 from pathlib import Path
@@ -58,6 +59,8 @@ class Config:
         env_nested_delimiter: str = "__",
         key_delimiter: str = ".",
     ) -> None:
+        if not env_prefix_separator or not env_nested_delimiter or not key_delimiter:
+            raise ValueError("Configuration delimiters must not be empty")
         self._env_prefix: str | None = env_prefix
         self._env_prefix_separator: str = env_prefix_separator
         self._env_nested_delimiter: str = env_nested_delimiter
@@ -157,9 +160,10 @@ class Config:
     def get(self, key: str, default: Any = None) -> Any:
         """Retrieve a configuration value by dotted key path."""
         try:
-            return get_path(self._merged, key, delimiter=self._key_delimiter)
+            value = get_path(self._merged, key, delimiter=self._key_delimiter)
         except KeyError:
             return default
+        return deepcopy(value)
 
     def require(self, key: str) -> Any:
         """Retrieve a configuration value, raising MissingConfigKeyError if missing."""
@@ -192,33 +196,44 @@ class Config:
 
     def sources(self) -> tuple[SourceInfo, ...]:
         """Return all registered source layers sorted by priority and order."""
-        return tuple(
-            layer.info
-            for layer in sorted(
-                self._sources, key=lambda layer: (layer.info.priority, layer.info.order)
-            )
-        )
+        return tuple(layer.info for layer in self._sorted_layers())
 
     def get_source(self, key: str) -> ValueSource:
         """Return the winning value and source layer metadata for a key."""
         normalized_key = self._normalize_lookup_key(key)
-        for layer in sorted(
-            self._sources,
-            key=lambda item: (item.info.priority, item.info.order),
-            reverse=True,
-        ):
-            try:
-                value = get_path(
-                    layer.data, normalized_key, delimiter=self._key_delimiter
-                )
-            except KeyError:
-                continue
-            return ValueSource(
-                key=normalized_key,
-                value=deep_merge({}, {"value": value})["value"],
-                source=layer.info,
-            )
-        raise MissingConfigKeyError(key)
+        parts = [
+            part
+            for part in normalized_key.split(self._key_delimiter)
+            if part.strip()
+        ]
+        if not parts:
+            raise MissingConfigKeyError(key)
+
+        winning_layer: _SourceLayer | None = None
+        value: Any = None
+        for index in range(1, len(parts) + 1):
+            current_key = self._key_delimiter.join(parts[:index])
+            winning_layer = None
+            for layer in reversed(self._sorted_layers()):
+                try:
+                    value = get_path(
+                        layer.data, current_key, delimiter=self._key_delimiter
+                    )
+                except KeyError:
+                    continue
+                winning_layer = layer
+                break
+
+            if winning_layer is None:
+                raise MissingConfigKeyError(key)
+            if index < len(parts) and not isinstance(value, Mapping):
+                raise MissingConfigKeyError(key)
+
+        return ValueSource(
+            key=normalized_key,
+            value=deepcopy(value),
+            source=winning_layer.info,
+        )
 
     def _add_source(
         self,
@@ -242,11 +257,17 @@ class Config:
 
     def _rebuild(self) -> None:
         merged: dict[str, Any] = {}
-        for layer in sorted(
-            self._sources, key=lambda item: (item.info.priority, item.info.order)
-        ):
+        for layer in self._sorted_layers():
             merged = deep_merge(merged, layer.data)
         self._merged = merged
+
+    def _sorted_layers(self) -> tuple[_SourceLayer, ...]:
+        return tuple(
+            sorted(
+                self._sources,
+                key=lambda item: (item.info.priority, item.info.order),
+            )
+        )
 
     def _normalize_lookup_key(self, key: str) -> str:
         return self._key_delimiter.join(
@@ -262,12 +283,17 @@ def load_config(
     files: tuple[str | Path, ...] = (),
     dotenv: str | Path | None = None,
     environ: Mapping[str, str] | None = None,
-    env: bool = True,
+    env: bool | None = None,
     env_prefix: str | None = None,
     env_prefix_separator: str = "_",
     env_nested_delimiter: str = "__",
 ) -> Config:
-    """Convenience function to construct and populate a Config instance."""
+    """Convenience function to construct and populate a Config instance.
+
+    Environment variables are loaded implicitly only when a prefix or explicit
+    environment mapping is supplied. Pass ``env=True`` to intentionally load
+    the complete process environment without a prefix.
+    """
     config = Config(
         env_prefix=env_prefix,
         env_prefix_separator=env_prefix_separator,
@@ -279,6 +305,11 @@ def load_config(
         _ = config.load_file(path)
     if dotenv is not None:
         _ = config.load_dotenv(dotenv)
-    if env:
+    should_load_env = (
+        environ is not None or env_prefix is not None
+        if env is None
+        else env
+    )
+    if should_load_env:
         _ = config.load_env(environ)
     return config

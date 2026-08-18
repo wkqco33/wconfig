@@ -11,6 +11,7 @@ from ._utils import normalize_mapping
 from .errors import (
     ConfigDecodeError,
     ConfigFileNotFoundError,
+    ConfigFileReadError,
     UnsupportedConfigFormatError,
 )
 
@@ -19,9 +20,16 @@ def load_file_data(
     path: str | Path, *, format: str | None = None
 ) -> dict[str, Any]:
     file_path = Path(path)
-    if not file_path.exists():
+    try:
+        exists = file_path.exists()
+        is_file = file_path.is_file()
+    except OSError as exc:
+        raise ConfigFileReadError(
+            f"Could not inspect configuration path: {file_path}"
+        ) from exc
+    if not exists:
         raise ConfigFileNotFoundError(f"Configuration file does not exist: {file_path}")
-    if not file_path.is_file():
+    if not is_file:
         raise ConfigDecodeError(f"Configuration path is not a file: {file_path}")
 
     if format is not None:
@@ -48,15 +56,22 @@ def load_file_data(
 
 def load_dotenv_data(path: str | Path) -> dict[str, str]:
     file_path = Path(path)
-    if not file_path.exists():
+    try:
+        exists = file_path.exists()
+        is_file = file_path.is_file()
+    except OSError as exc:
+        raise ConfigFileReadError(f"Could not inspect .env path: {file_path}") from exc
+    if not exists:
         raise ConfigFileNotFoundError(f".env file does not exist: {file_path}")
-    if not file_path.is_file():
+    if not is_file:
         raise ConfigDecodeError(f".env path is not a file: {file_path}")
 
     items: list[tuple[str, str]] = []
-    for line_number, raw_line in enumerate(
-        file_path.read_text(encoding="utf-8").splitlines(), start=1
-    ):
+    try:
+        lines = file_path.read_text(encoding="utf-8").splitlines()
+    except (OSError, UnicodeError) as exc:
+        raise ConfigFileReadError(f"Could not read .env file: {file_path}") from exc
+    for line_number, raw_line in enumerate(lines, start=1):
         stripped = raw_line.strip()
         if not stripped or stripped.startswith("#"):
             continue
@@ -85,6 +100,8 @@ def _load_json(path: Path) -> Any:
         return json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:
         raise ConfigDecodeError(f"Invalid JSON in {path}: {exc}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ConfigFileReadError(f"Could not read JSON file: {path}") from exc
 
 
 def _load_toml(path: Path) -> Any:
@@ -93,6 +110,8 @@ def _load_toml(path: Path) -> Any:
             return tomllib.load(handle)
     except tomllib.TOMLDecodeError as exc:
         raise ConfigDecodeError(f"Invalid TOML in {path}: {exc}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ConfigFileReadError(f"Could not read TOML file: {path}") from exc
 
 
 def _load_yaml(path: Path) -> Any:
@@ -106,6 +125,8 @@ def _load_yaml(path: Path) -> Any:
             data = yaml.safe_load(handle)
     except yaml.YAMLError as exc:
         raise ConfigDecodeError(f"Invalid YAML in {path}: {exc}") from exc
+    except (OSError, UnicodeError) as exc:
+        raise ConfigFileReadError(f"Could not read YAML file: {path}") from exc
     return {} if data is None else data
 
 

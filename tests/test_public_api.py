@@ -5,7 +5,13 @@ from pathlib import Path
 
 import pytest
 
-from wconfig import Config, MissingConfigKeyError, ValueSource, load_config
+from wconfig import (
+    Config,
+    ConfigNormalizationError,
+    MissingConfigKeyError,
+    ValueSource,
+    load_config,
+)
 
 
 @dataclass
@@ -134,3 +140,51 @@ def test_load_file_supports_explicit_format(tmp_path: Path):
     assert config["database.host"] == "pg.internal"
     assert config["server.port"] == 9090
 
+
+def test_get_returns_copies_of_mutable_values():
+    config = Config().set_defaults({"server": {"host": "localhost"}})
+
+    value = config.get("server")
+    assert isinstance(value, dict)
+    value["host"] = "mutated"
+
+    assert config.get("server.host") == "localhost"
+
+
+def test_get_source_respects_parent_key_shadowing():
+    config = (
+        Config()
+        .set_defaults({"database": {"host": "localhost"}})
+        .load_mapping({"database": "disabled"}, priority=40)
+    )
+
+    with pytest.raises(MissingConfigKeyError):
+        config.get_source("database.host")
+
+
+def test_normalized_key_collisions_are_rejected():
+    with pytest.raises(ConfigNormalizationError, match="Normalized key collision"):
+        Config().set_defaults({"API-Key": "first", "api_key": "second"})
+
+
+def test_environment_key_conflicts_are_rejected():
+    with pytest.raises(ConfigNormalizationError, match="Conflicting environment keys"):
+        Config(env_prefix="APP").load_env(
+            {
+                "APP_DATABASE": "disabled",
+                "APP_DATABASE__HOST": "localhost",
+            }
+        )
+
+
+def test_empty_delimiters_are_rejected():
+    with pytest.raises(ValueError, match="delimiters"):
+        Config(key_delimiter="")
+
+
+def test_load_config_does_not_load_all_environment_by_default(monkeypatch):
+    monkeypatch.setenv("WCONFIG_IMPLICIT_TEST", "unexpected")
+
+    config = load_config()
+
+    assert not config.has("wconfig_implicit_test")

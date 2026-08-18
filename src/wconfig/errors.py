@@ -10,6 +10,14 @@ class ConfigFileNotFoundError(ConfigError, FileNotFoundError):
     """Raised when a requested configuration file does not exist."""
 
 
+class ConfigFileReadError(ConfigError, OSError):
+    """Raised when a configuration file cannot be read."""
+
+
+class ConfigNormalizationError(ConfigError):
+    """Raised when configuration keys cannot be normalized unambiguously."""
+
+
 class UnsupportedConfigFormatError(ConfigError):
     """Raised when a config file extension is not supported."""
 

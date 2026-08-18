@@ -4,23 +4,59 @@ from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from typing import Any
 
+from .errors import ConfigNormalizationError
+
 
 def normalize_key(key: str) -> str:
     return key.strip().replace("-", "_").lower()
 
 
-def normalize_value(value: Any) -> Any:
+def normalize_value(value: Any, *, path: str = "") -> Any:
     if isinstance(value, Mapping):
-        return normalize_mapping(value)
+        return normalize_mapping(value, path=path)
     if isinstance(value, list):
-        return [normalize_value(item) for item in value]
+        return [
+            normalize_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        ]
+    if isinstance(value, tuple):
+        return tuple(
+            normalize_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        )
+    if isinstance(value, set):
+        return {
+            normalize_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        }
+    if isinstance(value, frozenset):
+        return frozenset(
+            normalize_value(item, path=f"{path}[{index}]")
+            for index, item in enumerate(value)
+        )
     return deepcopy(value)
 
 
-def normalize_mapping(data: Mapping[str, Any]) -> dict[str, Any]:
-    return {
-        normalize_key(str(key)): normalize_value(value) for key, value in data.items()
-    }
+def normalize_mapping(
+    data: Mapping[str, Any], *, path: str = ""
+) -> dict[str, Any]:
+    normalized: dict[str, Any] = {}
+    original_keys: dict[str, str] = {}
+    for key, value in data.items():
+        original_key = str(key)
+        normalized_key = normalize_key(original_key)
+        if normalized_key in normalized:
+            previous_key = original_keys[normalized_key]
+            location = path or "<root>"
+            raise ConfigNormalizationError(
+                f"Normalized key collision at {location}: "
+                f"{previous_key!r} and {original_key!r} both normalize to "
+                f"{normalized_key!r}"
+            )
+        original_keys[normalized_key] = original_key
+        child_path = f"{path}.{normalized_key}" if path else normalized_key
+        normalized[normalized_key] = normalize_value(value, path=child_path)
+    return normalized
 
 
 def deep_merge(base: Mapping[str, Any], override: Mapping[str, Any]) -> dict[str, Any]:
@@ -43,7 +79,11 @@ def build_nested_mapping(
     prefix_separator: str,
     nested_delimiter: str,
 ) -> dict[str, Any]:
+    if not prefix_separator or not nested_delimiter:
+        raise ValueError("Environment key delimiters must not be empty")
+
     result: dict[str, Any] = {}
+    seen_paths: dict[tuple[str, ...], str] = {}
     prefix_token = None
     normalized_prefix = None
     if prefix:
@@ -75,6 +115,18 @@ def build_nested_mapping(
         ]
         if not parts:
             continue
+        path = tuple(parts)
+        for previous_path, previous_key in seen_paths.items():
+            if (
+                previous_path == path
+                or previous_path[: len(path)] == path
+                or path[: len(previous_path)] == previous_path
+            ):
+                raise ConfigNormalizationError(
+                    f"Conflicting environment keys at {'.'.join(parts)!r}: "
+                    f"{previous_key!r} and {raw_key!r}"
+                )
+        seen_paths[path] = raw_key
         set_path(result, parts, raw_value)
     return result
 
